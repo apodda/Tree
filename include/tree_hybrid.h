@@ -7,7 +7,7 @@
 typedef struct tree_hybrid {
 	unsigned int size_tree;
 	unsigned int size_vector;
-	double* tree;
+	double* data;
 } tree_hybrid;
 
 // Constructors

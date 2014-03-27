@@ -14,3 +14,6 @@ test: tree_2d.o tree_hybrid.o test.o
 .c.o: builddir
 	mkdir -p $(BUILDDIR)
 	$(CC) $(CFLAGS) -c $< -o $(BUILDDIR)/$@
+
+clean:
+	rm -r ./build/

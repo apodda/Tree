@@ -93,8 +93,8 @@ double jump_probability(unsigned int i,unsigned  int k, double h, double mu, tre
 	int kd = jump_down_index(i, k, mu, h, tree);
 	int ku = jump_up_index(i, k, mu, h, tree);
 	
-	probability = mu * h + tree_2d_get(tree, k, i) - tree_2d_get(tree, kd, i+1);
-	probability = probability / (tree_2d_get(tree, ku, i+1) - tree_2d_get(tree, kd, i+1));
+	probability = mu * h + tree_2d_get(tree, i, k) - tree_2d_get(tree, i+1, kd);
+	probability = probability / (tree_2d_get(tree, i+1, ku) - tree_2d_get(tree, i+1, kd));
 	probability = fmax(probability, 0.0);
 	probability = fmin(probability, 1.0);
 	
@@ -308,29 +308,28 @@ double payoff(double S, double strike)
 }
 
 // TODO remove/polish
-void tridiagsolver(double a[], double b[], double c[], double bind[], int size) {
-    int n = size, i = 0;
-    c[0] /= b[0];
-    bind[0] /= b[0];
-    for (i=1; i<n; i++) {
-        c[i] /= b[i]-a[i]*c[i-1];
-        bind[i] = (bind[i]-a[i]*bind[i-1])/(b[i]-a[i]*c[i-1]);
-    }
-    bind[n] = (bind[n]-a[n]*bind[n-1])/(b[n]-a[n]*c[n-1]);
-    for (i=n-1; i>=0; i--) {
-        bind[i] -= c[i]*bind[i+1];
-    }
+void tridiag_solver(double a[], double b[], double c[], double bind[], int size){
+     int n = size, i = 0;
+     c[0] /= b[0];
+     bind[0] /= b[0];
+     for (i=1; i<n; i++){
+         c[i] /= b[i]-a[i]*c[i-1];
+         bind[i] = (bind[i]-a[i]*bind[i-1])/(b[i]-a[i]*c[i-1]);
+     }
+     bind[n] = (bind[n]-a[n]*bind[n-1])/(b[n]-a[n]*c[n-1]);
+     for (i=n-1; i>=0; i--){
+         bind[i] -= c[i]*bind[i+1];
+     }
 }
 
 int main (int argc, char *argv[])
 {
-	unsigned int N = 100;
 	int i, j, k;
 	unsigned int ku, kd;
 	double eps = 0.0001;
 	
 	double tmp_payoff;
-	double tmp_y;
+	//double tmp_y;
 	double tmp_v;
 	double p_up, p_down;
 
@@ -350,11 +349,12 @@ int main (int argc, char *argv[])
 	double start_V = 0.1;
 	
 	// Derived parameters
-	double h = maturity / (double) N;
-	// FIXME choose a better grid for y
-	int M = N;
-	//double boundary = 10;
-	double delta_y = h;
+	unsigned int N = 100 + 1;
+	double h = maturity / (double) (N - 1); // N points => N-1 segments
+
+	int M = 50;
+	double S = 0.5 * maturity * sqrt(N - 1);
+	double delta_y = S / (2*M);
 	
 	double start_Y = log(start_S) - ro / sigma_V * start_V;
 	
@@ -362,18 +362,19 @@ int main (int argc, char *argv[])
 	
 	double *row_up, *row_down;
 	
-	tree_2d *tree_V = tree_2d_create(N+1);
+	tree_2d *tree_V = tree_2d_create(N);
 	initialize_tree_V(tree_V, start_V, sigma_V, h);
 	
-	tree_hybrid *tree_P = tree_hybrid_create(N + 1, 2 * M + 1);
+	tree_hybrid *tree_P = tree_hybrid_create(N, 2 * M + 1);
 	double alpha, beta;
 	double *tmp_vector = malloc(sizeof(double) * tree_P->size_vector);
+	double tmp_y;
 	double *result;
 	double v;
 	
-	double *super_diag = malloc(sizeof(double) * (tree_P->size_vector - 1));
-	double *diag = malloc(sizeof(double) * tree_P->size_vector);
-	double *sub_diag = malloc(sizeof(double) * (tree_P->size_vector - 1));
+	double *a = malloc(sizeof(double) * (tree_P->size_vector));
+	double *b = malloc(sizeof(double) * (tree_P->size_vector));
+	double *c = malloc(sizeof(double) * (tree_P->size_vector));
 	
 	// FIXME Ensure tree_P->size_tree == tree_V->size
 	for(j = 0; j < tree_P->size_tree; j++)
@@ -381,7 +382,6 @@ int main (int argc, char *argv[])
 		for(k = 0; k < tree_P->size_vector; k++)
 		{
 			tmp_y = start_Y + delta_y * (k - M);
-			//printf("%f ", tmp_y);
 			if(tree_2d_get_safe(tree_V, &tmp_v, tree_P->size_tree-1, j)) {
 				PRINTF("Error: ");
 				// TODO Handle index-out-of-bonds errors
@@ -393,7 +393,6 @@ int main (int argc, char *argv[])
 				// TODO Handle index-out-of-bonds errors
 			}
 		}
-		//printf("\n");
 	}
 	
 	for(i = tree_P->size_tree-2; i > -1; i--) {
@@ -406,8 +405,6 @@ int main (int argc, char *argv[])
 			if(tree_2d_get_safe(tree_V, &v, i, j)) {
 				abort();
 			}
-			//PRINTF("---\n");
-			//PRINTF("The interest rate at index %d, %d is %lf \n", i, j, v);
 			
 			// FIXME move all into a struct...
 			mu_Y = r - delta - 0.5 * v - ro / sigma_V * kappa * (theta - v);
@@ -415,40 +412,25 @@ int main (int argc, char *argv[])
 			
 			alpha = h * 0.5 / delta_y * mu_Y;
 			beta = h * 0.5 / (delta_y * delta_y) * (1 - ro * ro) * v;
-			//printf("mu_Y = %f, mu-V = %f\n", mu_Y, mu_V);
 			
 			ku = jump_up_index(i, j, mu_V, h, tree_V);
 			row_up = tree_hybrid_get_vector(tree_P, i+1, ku);
 			p_up = jump_probability(i, j, h, mu_V, tree_V);
 			
-			/*if(ku != j + 1) {
-				printf("Jumping high at index %d, %d: ku = %d\n", i, j, ku);
-			}*/
-			
-			//PRINTF("The up jump index at index %d, %d is %d \n", i, j, ku);
-			//PRINTF("The up jump probability at index %d, %d is %lf \n", i, j, p_up);
-			
 			kd = jump_down_index(i, j, mu_V, h, tree_V);
 			row_down = tree_hybrid_get_vector(tree_P, i+1, kd);
 			p_down = 1 - p_up;
 			
-			/*if(kd != j) {
-				printf("Jumping low at index %d, %d: kd = %d\n", i, j, kd);
-			}*/
-			
-			//PRINTF("The down jump index at index %d, %d is %d \n", i, j, kd);
-			//PRINTF("The down jump probability at index %d, %d is %lf \n", i, j, p_down);
-			
 			// FIXME Check indexing
 			result = tree_hybrid_get_vector(tree_P, i, j);
 			
-			//tmp_vector = result;
+			tmp_vector = result;
 			
 			for(k = 0; k < tree_P->size_vector; k++) {
 				tmp_vector[k] = exp(-r * h) * (p_up * row_up[k] + p_down * row_down[k]);
 			}
 			
-			initialize_matrix(sub_diag, diag, super_diag, tree_P->size_vector, alpha, beta);
+			//initialize_matrix(sub_diag, diag, super_diag, tree_P->size_vector, alpha, beta);
 			/*diag[0] = 1 + 2 * beta;
 			super_diag[0] = -2 * beta;
 			for (k=0; k<=tree_P->size_vector - 2; k++) {
@@ -459,30 +441,30 @@ int main (int argc, char *argv[])
 			sub_diag[tree_P->size_vector-1] = -2 * beta;
 			diag[tree_P->size_vector-1] = 1 + 2*beta;*/
 			
+			b[0] = 1+2*beta;
+			c[0] = -2*beta;
+			a[tree_P->size_vector - 1] = -2*beta;
+			b[tree_P->size_vector - 1] = 1+2*beta;
+			for (k=1; k< tree_P->size_vector - 1; k++){
+				a[k] = alpha-beta;
+				b[k] = 1+2*beta;
+				c[k] = -alpha-beta;
+				//bind[k+M] = exp(-r*ht)*(Ph[kd[n][k]][i+Ns]*pd[n][k]+Ph[ku[n][k]][i+Ns]*pu[n][k]);
+			}
+			
 			if (v > eps) {
 				// A u_n = u_n+1
 				// FIXME Check size and matrix initialization
-				thomas_algorithm(sub_diag, diag, super_diag, result, tmp_vector, tree_P->size_vector);
-				//tridiagsolver(sub_diag, diag, super_diag, tmp_vector, tree_P->size_vector-1);
+				//thomas_algorithm(sub_diag, diag, super_diag, result, tmp_vector, tree_P->size_vector);
+				tridiag_solver(a, b, c, tmp_vector, tree_P->size_vector-1);
 				
 			} else {
 				// u_n = A u_n+1
+				// TODO Check this
 				explicit_step(alpha, beta, result, tmp_vector, tree_P->size_vector);
-				//abort(); // FIXME Remove !!!
 			}
-			
-			/*for(k = 0; k < tree_P->size_vector; k++) {
-				printf("%f ", result[k]);
-			}
-			printf("\n");cd
-			abort();*/
 		}
 	}
-	
-	/*for(i = tree_P->size_tree-1; i >= 0; i--) {
-		printf("--- %d ---\n", i);
-		tree_hybrid_print_slice(tree_P, i);
-	}*/
 	
 	double tmp;
 	if(!tree_hybrid_get_safe(tree_P, &tmp, 0, 0, M)) {
@@ -491,11 +473,9 @@ int main (int argc, char *argv[])
 		printf("Error: Index out of bonds\n");
 	}
 	
-	//tree_hybrid_print_slice(tree_P, 0);
-	
-	free(sub_diag);
-	free(diag);
-	free(super_diag);
+	//free(sub_diag);
+	//free(diag);
+	//free(super_diag);
 	
 	return 0;
 }

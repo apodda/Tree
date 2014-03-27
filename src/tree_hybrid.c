@@ -13,21 +13,21 @@ tree_hybrid *tree_hybrid_create(unsigned int size_tree, unsigned int size_vector
 	
 	tree->size_tree = size_tree;
 	tree->size_vector = size_vector;
-	tree->tree = malloc(sizeof(double) * (size_tree) * (size_tree + 1) * size_vector / 2);
+	tree->data = malloc(sizeof(double) * size_tree * size_tree * size_vector);
 	
 	return tree;
 }
 
 void tree_hybrid_destroy(tree_hybrid *tree)
 {
-	free(tree->tree);
+	free(tree->data);
 	free(tree);
 }
 
 // FIXME should these be macros?
 static unsigned int _linear_index(tree_hybrid *tree, unsigned int time, unsigned int row, unsigned int space)
 {
-	return (time * (time + 1) / 2 + row) * tree->size_vector + space;
+	return time * tree->size_tree * tree->size_tree + row * tree->size_tree + space;
 }
 
 static int _check_boundaries(tree_hybrid *tree, unsigned int time, unsigned int row, unsigned int space)
@@ -44,7 +44,7 @@ int tree_hybrid_get_safe(tree_hybrid *tree, double *result, unsigned int time, u
 {
 	// Returns 0 on correct execution, 1 if an index is out of bonds
 	if(_check_boundaries(tree, time, row, space)) {
-		*result = tree->tree[_linear_index(tree, time, row, space)];
+		*result = tree->data[_linear_index(tree, time, row, space)];
 		return 0;
 	} else {
 		return 1;
@@ -53,19 +53,19 @@ int tree_hybrid_get_safe(tree_hybrid *tree, double *result, unsigned int time, u
 
 double tree_hybrid_get(tree_hybrid *tree, unsigned int time, unsigned int row, unsigned int space)
 {
-	return tree->tree[_linear_index(tree, time, row, space)];
+	return tree->data[_linear_index(tree, time, row, space)];
 }
 
 double* tree_hybrid_get_vector(tree_hybrid *tree, unsigned int time, unsigned int row)
 {
-	return tree->tree + _linear_index(tree, time, row, 0);
+	return tree->data + _linear_index(tree, time, row, 0);
 }
 
 int tree_hybrid_set_safe(tree_hybrid *tree, double value, unsigned int time, unsigned int row, unsigned int space)
 {
 	// Returns 0 on correct execution, 1 if an index is out of bonds
 	if(_check_boundaries(tree, time, row, space)) {
-		tree->tree[_linear_index(tree, time, row, space)] = value;
+		tree->data[_linear_index(tree, time, row, space)] = value;
 		return 0;
 	} else {
 		return 1;
