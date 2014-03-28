@@ -13,7 +13,7 @@ tree_hybrid *tree_hybrid_create(unsigned int size_tree, unsigned int size_vector
 	
 	tree->size_tree = size_tree;
 	tree->size_vector = size_vector;
-	tree->data = malloc(sizeof(double) * size_tree * size_tree * size_vector);
+	tree->data = malloc(sizeof(double) * (size_tree) * (size_tree + 1) * size_vector / 2);
 	
 	return tree;
 }
@@ -27,7 +27,7 @@ void tree_hybrid_destroy(tree_hybrid *tree)
 // FIXME should these be macros?
 static unsigned int _linear_index(tree_hybrid *tree, unsigned int time, unsigned int row, unsigned int space)
 {
-	return time * tree->size_tree * tree->size_tree + row * tree->size_tree + space;
+	return (time * (time + 1) / 2 + row) * tree->size_vector + space;
 }
 
 static int _check_boundaries(tree_hybrid *tree, unsigned int time, unsigned int row, unsigned int space)
